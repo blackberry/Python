@@ -1305,15 +1305,15 @@ class Popen(object):
                         if gc_was_enabled:
                             gc.enable()
                 finally:
-                    # be sure the FD is closed no matter what
+                    # be sure the FDs are closed no matter what
                     os.close(errpipe_write)
-
-                if p2cread != -1 and p2cwrite != -1:
-                    os.close(p2cread)
-                if c2pwrite != -1 and c2pread != -1:
-                    os.close(c2pwrite)
-                if errwrite != -1 and errread != -1:
-                    os.close(errwrite)
+    
+                    if p2cread != -1 and p2cwrite != -1:
+                        os.close(p2cread)
+                    if c2pwrite != -1 and c2pread != -1:
+                        os.close(c2pwrite)
+                    if errwrite != -1 and errread != -1:
+                        os.close(errwrite)
 
                 # Wait for exec to fail or succeed; possibly raising an
                 # exception (limited in size)

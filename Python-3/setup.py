@@ -323,6 +323,9 @@ class PyBuildExt(build_ext):
             self.announce('WARNING: skipping import check for Cygwin-based "%s"'
                 % ext.name)
             return
+        if os.environ.get('CROSS_COMPILE_TARGET') == 'yes':
+            self.announce('WARNING: skipping import check for cross-compile target')
+            return
         ext_filename = os.path.join(
             self.build_lib,
             self.get_ext_filename(self.get_ext_fullname(ext.name)))
@@ -393,66 +396,78 @@ class PyBuildExt(build_ext):
             os.unlink(tmpfile)
 
     def detect_modules(self):
-        # Ensure that /usr/local is always used, but the local build
-        # directories (i.e. '.' and 'Include') must be first.  See issue
-        # 10520.
-        add_dir_to_list(self.compiler.library_dirs, '/usr/local/lib')
-        add_dir_to_list(self.compiler.include_dirs, '/usr/local/include')
-        self.add_multiarch_paths()
+        if os.environ.get('CROSS_COMPILE_TARGET'):
+            for env_var, dir_list in (
+                ('CROSS_COMPILE_INCDIRS', self.compiler.include_dirs),
+                ('CROSS_COMPILE_LIBDIRS', self.compiler.library_dirs)):
+                env_val = os.environ.get(env_var)
+                for path in env_val.split(os.pathsep):
+                    add_dir_to_list(dir_list, path)
+            inc_dirs = self.compiler.include_dirs[:]
+            lib_dirs = self.compiler.library_dirs[:]
+            if 'MACHDEP' in os.environ:
+                sys.platform = os.environ['MACHDEP']
+        else:
+            # Ensure that /usr/local is always used, but the local build
+            # directories (i.e. '.' and 'Include') must be first.  See issue
+            # 10520.
+            add_dir_to_list(self.compiler.library_dirs, '/usr/local/lib')
+            add_dir_to_list(self.compiler.include_dirs, '/usr/local/include')
+            self.add_multiarch_paths()
 
-        # Add paths specified in the environment variables LDFLAGS and
-        # CPPFLAGS for header and library files.
-        # We must get the values from the Makefile and not the environment
-        # directly since an inconsistently reproducible issue comes up where
-        # the environment variable is not set even though the value were passed
-        # into configure and stored in the Makefile (issue found on OS X 10.3).
-        for env_var, arg_name, dir_list in (
-                ('LDFLAGS', '-R', self.compiler.runtime_library_dirs),
-                ('LDFLAGS', '-L', self.compiler.library_dirs),
-                ('CPPFLAGS', '-I', self.compiler.include_dirs)):
-            env_val = sysconfig.get_config_var(env_var)
-            if env_val:
-                # To prevent optparse from raising an exception about any
-                # options in env_val that it doesn't know about we strip out
-                # all double dashes and any dashes followed by a character
-                # that is not for the option we are dealing with.
-                #
-                # Please note that order of the regex is important!  We must
-                # strip out double-dashes first so that we don't end up with
-                # substituting "--Long" to "-Long" and thus lead to "ong" being
-                # used for a library directory.
-                env_val = re.sub(r'(^|\s+)-(-|(?!%s))' % arg_name[1],
-                                 ' ', env_val)
-                parser = optparse.OptionParser()
-                # Make sure that allowing args interspersed with options is
-                # allowed
-                parser.allow_interspersed_args = True
-                parser.error = lambda msg: None
-                parser.add_option(arg_name, dest="dirs", action="append")
-                options = parser.parse_args(env_val.split())[0]
-                if options.dirs:
-                    for directory in reversed(options.dirs):
-                        add_dir_to_list(dir_list, directory)
+            # Add paths specified in the environment variables LDFLAGS and
+            # CPPFLAGS for header and library files.
+            # We must get the values from the Makefile and not the environment
+            # directly since an inconsistently reproducible issue comes up where
+            # the environment variable is not set even though the value were passed
+            # into configure and stored in the Makefile (issue found on OS X 10.3).
+            for env_var, arg_name, dir_list in (
+                    ('LDFLAGS', '-R', self.compiler.runtime_library_dirs),
+                    ('LDFLAGS', '-L', self.compiler.library_dirs),
+                    ('CPPFLAGS', '-I', self.compiler.include_dirs)):
+                env_val = sysconfig.get_config_var(env_var)
+                if env_val:
+                    # To prevent optparse from raising an exception about any
+                    # options in env_val that it doesn't know about we strip out
+                    # all double dashes and any dashes followed by a character
+                    # that is not for the option we are dealing with.
+                    #
+                    # Please note that order of the regex is important!  We must
+                    # strip out double-dashes first so that we don't end up with
+                    # substituting "--Long" to "-Long" and thus lead to "ong" being
+                    # used for a library directory.
+                    env_val = re.sub(r'(^|\s+)-(-|(?!%s))' % arg_name[1],
+                                     ' ', env_val)
+                    parser = optparse.OptionParser()
+                    # Make sure that allowing args interspersed with options is
+                    # allowed
+                    parser.allow_interspersed_args = True
+                    parser.error = lambda msg: None
+                    parser.add_option(arg_name, dest="dirs", action="append")
+                    options = parser.parse_args(env_val.split())[0]
+                    if options.dirs:
+                        for directory in reversed(options.dirs):
+                            add_dir_to_list(dir_list, directory)
 
-        if os.path.normpath(sys.prefix) != '/usr' \
-                and not sysconfig.get_config_var('PYTHONFRAMEWORK'):
-            # OSX note: Don't add LIBDIR and INCLUDEDIR to building a framework
-            # (PYTHONFRAMEWORK is set) to avoid # linking problems when
-            # building a framework with different architectures than
-            # the one that is currently installed (issue #7473)
-            add_dir_to_list(self.compiler.library_dirs,
-                            sysconfig.get_config_var("LIBDIR"))
-            add_dir_to_list(self.compiler.include_dirs,
-                            sysconfig.get_config_var("INCLUDEDIR"))
+            if os.path.normpath(sys.prefix) != '/usr' \
+                    and not sysconfig.get_config_var('PYTHONFRAMEWORK'):
+                # OSX note: Don't add LIBDIR and INCLUDEDIR to building a framework
+                # (PYTHONFRAMEWORK is set) to avoid # linking problems when
+                # building a framework with different architectures than
+                # the one that is currently installed (issue #7473)
+                add_dir_to_list(self.compiler.library_dirs,
+                                sysconfig.get_config_var("LIBDIR"))
+                add_dir_to_list(self.compiler.include_dirs,
+                                sysconfig.get_config_var("INCLUDEDIR"))
 
-        # lib_dirs and inc_dirs are used to search for files;
-        # if a file is found in one of those directories, it can
-        # be assumed that no additional -I,-L directives are needed.
-        lib_dirs = self.compiler.library_dirs + [
-            '/lib64', '/usr/lib64',
-            '/lib', '/usr/lib',
-            ]
-        inc_dirs = self.compiler.include_dirs + ['/usr/include']
+            # lib_dirs and inc_dirs are used to search for files;
+            # if a file is found in one of those directories, it can
+            # be assumed that no additional -I,-L directives are needed.
+            lib_dirs = self.compiler.library_dirs + [
+                '/lib64', '/usr/lib64',
+                '/lib', '/usr/lib',
+                ]
+            inc_dirs = self.compiler.include_dirs + ['/usr/include']
         exts = []
         missing = []
 
@@ -1052,7 +1067,6 @@ class PyBuildExt(build_ext):
                                   include_dirs=["Modules/_sqlite",
                                                 sqlite_incdir],
                                   library_dirs=sqlite_libdir,
-                                  runtime_library_dirs=sqlite_libdir,
                                   extra_link_args=sqlite_extra_link_args,
                                   libraries=["sqlite3",]))
         else:
@@ -1374,10 +1388,14 @@ class PyBuildExt(build_ext):
             missing.append('_multiprocessing')
         # End multiprocessing
 
+        # Neutrino specific modules
+        exts.append( Extension('nto', ['ntomodule.c']) )
+
         # Platform-specific libraries
         if (platform in ('linux2', 'freebsd4', 'freebsd5', 'freebsd6',
                         'freebsd7', 'freebsd8')
-            or platform.startswith("gnukfreebsd")):
+            or platform.startswith("gnukfreebsd")) and \
+                find_file('sys/soundcard.h', [], inc_dirs):
             exts.append( Extension('ossaudiodev', ['ossaudiodev.c']) )
         else:
             missing.append('ossaudiodev')
@@ -1663,7 +1681,7 @@ class PyBuildExt(build_ext):
                                          ffi_configfile):
                 from distutils.dir_util import mkpath
                 mkpath(ffi_builddir)
-                config_args = []
+                config_args = sysconfig.get_config_var("CONFIG_ARGS").split(" ")
 
                 # Pass empty CFLAGS because we'll just append the resulting
                 # CFLAGS to Python's; -g or -O2 is to be avoided.

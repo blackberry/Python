@@ -1,4 +1,3 @@
-
 /* Python interpreter top-level routines, including init/exit */
 
 #include "Python.h"
@@ -15,6 +14,12 @@
 #include "ast.h"
 #include "marshal.h"
 #include "osdefs.h"
+
+#ifdef __QNXNTO__
+#include <sys/trace.h>
+int enable_kernel_tracing;
+extern int python_import_arena_size_g;   /* pyarena.c */
+#endif
 
 #ifdef HAVE_SIGNAL_H
 #include <signal.h>
@@ -191,6 +196,28 @@ Py_InitializeEx(int install_sigs)
         return;
     initialized = 1;
     _Py_Finalizing = NULL;
+
+#ifdef __QNXNTO__
+    if ((p = Py_GETENV("ENABLE_PYTHON_KERNEL_TRACING")) && *p != '\0') {
+		enable_kernel_tracing = 1;
+	}
+
+    if ((p = Py_GETENV("PYTHON_IMPORT_ARENA_SIZE")) && *p != '\0') 
+     {
+        python_import_arena_size_g = atoi(p);
+        /* Now do some limit checking 1025-256k even bytes only */ 
+
+        if( python_import_arena_size_g <= 1024 )
+            python_import_arena_size_g = 16384;
+
+         /* 8 byte boundary check */
+        if( (python_import_arena_size_g & 8) != 0 ) 
+            python_import_arena_size_g = 16384;
+        
+        if( python_import_arena_size_g > 256000 )
+            python_import_arena_size_g = 16384; 
+     }
+#endif
 
 #if defined(HAVE_LANGINFO_H) && defined(HAVE_SETLOCALE)
     /* Set up the LC_CTYPE locale, so we can obtain
@@ -1257,6 +1284,11 @@ PyRun_SimpleFileExFlags(FILE *fp, const char *filename, int closeit,
             ret = -1;
             goto done;
         }
+
+#ifdef __QNXNTO__
+        SET_BUFFER_IO(fp);
+#endif
+
         /* Turn on optimization if a .pyo file is given */
         if (strcmp(ext, ".pyo") == 0)
             Py_OptimizeFlag = 1;

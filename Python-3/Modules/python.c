@@ -7,6 +7,33 @@
 #include <floatingpoint.h>
 #endif
 
+#if defined(__ARM__) && defined(__VFP_FP__) && defined(__QNXNTO__)
+#define ARM_DENORMAL_FIX
+#define ARM_VFP_FPSCR_FZ 0x1000000 // FPSCR flush-to-zero mode enable bit
+
+#ifndef Py_LIMITED_API
+PyAPI_FUNC(unsigned long) _Py_get_vfpcontrolword(void);
+PyAPI_FUNC(void) _Py_set_vfpcontrolword(unsigned long);
+#endif
+
+/* inline assembly for getting and setting the VFP FPU control word on
+   ARM */
+
+unsigned long _Py_get_vfpcontrolword(void) {
+    unsigned long cw;
+    __asm__ __volatile__ (
+        "vmrs %0, fpscr\n"
+         : "=r" (cw) : );
+    return cw;
+}
+
+void _Py_set_vfpcontrolword(unsigned long cw) {
+    __asm__ __volatile__ (
+        "vmsr fpscr, %0\n"
+         :: "r" (cw) );
+}
+#endif
+
 #ifdef MS_WINDOWS
 int
 wmain(int argc, wchar_t **argv)
@@ -32,6 +59,12 @@ main(int argc, char **argv)
      * Python requires non-stop mode.  Alas, some platforms enable FP
      * exceptions by default.  Here we disable them.
      */
+#ifdef ARM_DENORMAL_FIX
+    unsigned long vfp_cw = _Py_get_vfpcontrolword();
+    vfp_cw &= ~ARM_VFP_FPSCR_FZ;
+    _Py_set_vfpcontrolword(vfp_cw);
+#endif
+
 #ifdef __FreeBSD__
     fp_except_t m;
 

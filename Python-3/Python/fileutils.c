@@ -280,6 +280,9 @@ _Py_wfopen(const wchar_t *path, const wchar_t *mode)
     if (cpath == NULL)
         return NULL;
     f = fopen(cpath, cmode);
+#ifdef __QNXNTO__
+    SET_BUFFER_IO(f);
+#endif
     PyMem_Free(cpath);
     return f;
 #else
@@ -311,6 +314,9 @@ _Py_fopen(PyObject *path, const char *mode)
     if (bytes == NULL)
         return NULL;
     f = fopen(PyBytes_AS_STRING(bytes), mode);
+#ifdef __QNXNTO__
+    SET_BUFFER_IO(f);
+#endif
     Py_DECREF(bytes);
     return f;
 #endif

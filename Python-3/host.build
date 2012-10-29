@@ -1,0 +1,15 @@
+#!/bin/sh
+
+DEPLOY="$PWD/host"
+
+./configure &&
+make &&
+make install prefix=${DEPLOY}
+
+if [ $? != 0 ]; then 
+    exit 1
+fi
+
+cp python hostpython
+cp Parser/pgen hostpgen
+exit 0

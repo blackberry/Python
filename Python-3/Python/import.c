@@ -140,7 +140,6 @@ static const struct filedescr _PyImport_StandardFiletab[] = {
     {0, 0}
 };
 
-
 /* Initialize things */
 
 void
@@ -158,8 +157,10 @@ _PyImport_Init(void)
     for (scan = _PyImport_DynLoadFiletab; scan->suffix != NULL; ++scan)
         ++countD;
 #endif
+
     for (scan = _PyImport_StandardFiletab; scan->suffix != NULL; ++scan)
         ++countS;
+
     filetab = PyMem_NEW(struct filedescr, countD + countS + 1);
     if (filetab == NULL)
         Py_FatalError("Can't initialize import file table.");
@@ -1026,6 +1027,9 @@ check_compiled_module(char *pathname, time_t mtime, char *cpathname)
     long pyc_mtime;
 
     fp = fopen(cpathname, "rb");
+#ifdef __QNXNTO__
+    SET_BUFFER_IO(fp);
+#endif
     if (fp == NULL)
         return NULL;
     magic = PyMarshal_ReadLongFromFile(fp);
@@ -1795,6 +1799,9 @@ find_module(char *fullname, char *subname, PyObject *path, char *buf,
             if (filemode[0] == 'U')
                 filemode = "r" PY_STDIOTEXTMODE;
             fp = fopen(buf, filemode);
+#ifdef __QNXNTO__
+            SET_BUFFER_IO(fp);
+#endif
             if (fp != NULL) {
                 if (case_ok(buf, len, namelen, name))
                     break;
@@ -3305,6 +3312,9 @@ get_file(char *pathname, PyObject *fob, char *mode)
         mode = "r" PY_STDIOTEXTMODE;
     if (fob == NULL) {
         fp = fopen(pathname, mode);
+#ifdef __QNXNTO__
+        SET_BUFFER_IO(fp);
+#endif
     }
     else {
         int fd = PyObject_AsFileDescriptor(fob);

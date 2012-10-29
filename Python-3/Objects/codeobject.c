@@ -1,9 +1,16 @@
+#include <fcntl.h>
+#include <stdlib.h>
 #include "Python.h"
 #include "code.h"
 #include "structmember.h"
 
 #define NAME_CHARS \
     "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz"
+
+#ifdef __QNXNTO__
+#include <sys/trace.h>
+extern int enable_kernel_tracing;
+#endif
 
 /* all_name_chars(s): true iff all chars in s are valid NAME_CHARS */
 
@@ -109,6 +116,36 @@ PyCode_New(int argcount, int kwonlyargcount,
         co->co_lnotab = lnotab;
         co->co_zombieframe = NULL;
         co->co_weakreflist = NULL;
+
+#ifdef __QNXNTO__
+		if(enable_kernel_tracing) {
+			char path[1024];
+			int fd;
+
+			sprintf(path, "/tmp/python-%d.csv", getpid());
+			fd = open( path, O_APPEND|O_RDWR, 0600 );
+			if(fd == -1 && errno == ENOENT) {
+				fd = open( path, O_APPEND|O_CREAT|O_RDWR, 0600 );
+			}
+			if(fd != -1) {
+				//
+				// Address<sep>Length<sep>ObjectName<sep>FunctionName<sep>Signature<sep>SourceFile<sep>StartLine<sep>EndLine<sep>
+				//
+				sprintf( path, "%#x,%d,%s,%s,%s,%s,%d,%d\n",
+						(unsigned)PyBytes_AS_STRING(co->co_code),
+						PyBytes_GET_SIZE(co->co_code),
+						_PyUnicode_AsString(co->co_name) ?: "",
+						_PyUnicode_AsString(co->co_name) ?: "",
+						_PyUnicode_AsString(co->co_name) ?: "",
+						_PyUnicode_AsString(co->co_filename) ?: "",
+						co->co_firstlineno,
+						PyCode_Addr2Line(co, INT_MAX)
+					   );
+				write(fd, path, strlen(path) );
+			}
+			close(fd);
+		}
+#endif
     }
     return co;
 }

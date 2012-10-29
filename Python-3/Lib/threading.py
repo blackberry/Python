@@ -8,6 +8,19 @@ from traceback import format_exc as _format_exc
 from collections import deque
 from _weakrefset import WeakSet
 
+if _sys.platform == 'qnx6':
+    import ctypes as _ctypes
+    libc = _ctypes.CDLL('libc.so', use_errno=True)
+    _pthread_setname_np = libc.pthread_setname_np
+    del libc
+
+    def _os_thread_setname(tid, name):
+        if tid is not None and name is not None:
+            _pthread_setname_np(_ctypes.c_int(tid), name.encode('utf8'))
+else:
+    def _os_thread_setname(tid, name):
+        pass
+
 # Note regarding PEP 8 compliant names
 #  This threading model was originally inspired by Java, and inherited
 # the convention of camelCase function and method names from that
@@ -723,6 +736,7 @@ class Thread(_Verbose):
         try:
             self._set_ident()
             self._started.set()
+            _os_thread_setname(0, self._name)
             with _active_limbo_lock:
                 _active[self._ident] = self
                 del _limbo[self]
@@ -878,6 +892,7 @@ class Thread(_Verbose):
     def name(self, name):
         assert self._initialized, "Thread.__init__() not called"
         self._name = str(name)
+        _os_thread_setname(self._ident, self._name)
 
     @property
     def ident(self):

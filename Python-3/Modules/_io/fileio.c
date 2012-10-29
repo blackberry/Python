@@ -401,14 +401,12 @@ fileio_init(PyObject *oself, PyObject *args, PyObject *kwds)
            end of file (otherwise, it might be done only on the
            first write()). */
         PyObject *pos = portable_lseek(self->fd, NULL, 2);
+        /* If the seek fails, assume that the file does not support seeking. */
         if (pos == NULL) {
-            if (closefd) {
-                close(self->fd);
-                self->fd = -1;
-            }
-            goto error;
+            PyErr_Clear();
+        } else {
+            Py_DECREF(pos);
         }
-        Py_DECREF(pos);
     }
 
     goto done;

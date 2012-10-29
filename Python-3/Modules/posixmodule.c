@@ -149,6 +149,11 @@ corresponding Unix manual entries for more information on calls.");
 #define HAVE_SYSTEM     1
 #define HAVE_WAIT       1
 #define HAVE_TTYNAME    1
+#ifdef __QNXNTO__
+#define HAVE_SPAWNV     1
+extern pid_t _fork(const unsigned flags, const uintptr_t frame);
+#include <sys/procmsg.h>
+#endif /* __QNXNTO__ */
 #endif  /* PYOS_OS2 && PYCC_GCC && __VMS */
 #endif  /* _MSC_VER */
 #endif  /* __BORLANDC__ */
@@ -3776,7 +3781,7 @@ posix_spawnv(PyObject *self, PyObject *args)
     }
     argvlist[argc] = NULL;
 
-#if defined(PYOS_OS2) && defined(PYCC_GCC)
+#if (defined(PYOS_OS2) && defined(PYCC_GCC)) || defined(__QNXNTO__)
     Py_BEGIN_ALLOW_THREADS
     spawnval = spawnv(mode, path, argvlist);
     Py_END_ALLOW_THREADS
@@ -3791,6 +3796,16 @@ posix_spawnv(PyObject *self, PyObject *args)
 
     free_string_array(argvlist, argc);
     Py_DECREF(opath);
+
+#ifdef __QNXNTO__
+    if(mode == P_WAIT) {
+        if(WIFSIGNALED(spawnval)) {
+            spawnval = -WTERMSIG(spawnval);
+        } else if(WIFEXITED(spawnval)) {
+            spawnval = WEXITSTATUS(spawnval);
+        }
+    }
+#endif
 
     if (spawnval == -1)
         return posix_error();
@@ -3875,7 +3890,7 @@ posix_spawnve(PyObject *self, PyObject *args)
     if (envlist == NULL)
         goto fail_1;
 
-#if defined(PYOS_OS2) && defined(PYCC_GCC)
+#if (defined(PYOS_OS2) && defined(PYCC_GCC)) || defined(__QNXNTO__)
     Py_BEGIN_ALLOW_THREADS
     spawnval = spawnve(mode, path, argvlist, envlist);
     Py_END_ALLOW_THREADS
@@ -3886,6 +3901,16 @@ posix_spawnve(PyObject *self, PyObject *args)
     Py_BEGIN_ALLOW_THREADS
     spawnval = _spawnve(mode, path, argvlist, envlist);
     Py_END_ALLOW_THREADS
+#endif
+
+#ifdef __QNXNTO__
+    if(mode == P_WAIT) {
+        if(WIFSIGNALED(spawnval)) {
+            spawnval = -WTERMSIG(spawnval);
+        } else if(WIFEXITED(spawnval)) {
+            spawnval = WEXITSTATUS(spawnval);
+        }
+    }
 #endif
 
     if (spawnval == -1)
@@ -3907,8 +3932,8 @@ posix_spawnve(PyObject *self, PyObject *args)
     return res;
 }
 
-/* OS/2 supports spawnvp & spawnvpe natively */
-#if defined(PYOS_OS2)
+/* OS/2 and QNX support spawnvp & spawnvpe natively */
+#if defined(PYOS_OS2) || defined(__QNXNTO__)
 PyDoc_STRVAR(posix_spawnvp__doc__,
 "spawnvp(mode, file, args)\n\n\
 Execute the program 'file' in a new process, using the environment\n\
@@ -3971,7 +3996,7 @@ posix_spawnvp(PyObject *self, PyObject *args)
     argvlist[argc] = NULL;
 
     Py_BEGIN_ALLOW_THREADS
-#if defined(PYCC_GCC)
+#if defined(PYCC_GCC) || defined(__QNXNTO__)
     spawnval = spawnvp(mode, path, argvlist);
 #else
     spawnval = _spawnvp(mode, path, argvlist);
@@ -3980,6 +4005,16 @@ posix_spawnvp(PyObject *self, PyObject *args)
 
     free_string_array(argvlist, argc);
     Py_DECREF(opath);
+
+#ifdef __QNXNTO__
+    if(mode == P_WAIT) {
+        if(WIFSIGNALED(spawnval)) {
+            spawnval = -WTERMSIG(spawnval);
+        } else if(WIFEXITED(spawnval)) {
+            spawnval = WEXITSTATUS(spawnval);
+        }
+    }
+#endif
 
     if (spawnval == -1)
         return posix_error();
@@ -4001,7 +4036,7 @@ search path to find the file.\n\
 static PyObject *
 posix_spawnvpe(PyObject *self, PyObject *args)
 {
-    PyObject *opath
+    PyObject *opath;
     char *path;
     PyObject *argv, *env;
     char **argvlist;
@@ -4062,12 +4097,22 @@ posix_spawnvpe(PyObject *self, PyObject *args)
         goto fail_1;
 
     Py_BEGIN_ALLOW_THREADS
-#if defined(PYCC_GCC)
+#if defined(PYCC_GCC) || defined(__QNXNTO__)
     spawnval = spawnvpe(mode, path, argvlist, envlist);
 #else
     spawnval = _spawnvpe(mode, path, argvlist, envlist);
 #endif
     Py_END_ALLOW_THREADS
+
+#ifdef __QNXNTO__
+    if(mode == P_WAIT) {
+        if(WIFSIGNALED(spawnval)) {
+            spawnval = -WTERMSIG(spawnval);
+        } else if(WIFEXITED(spawnval)) {
+            spawnval = WEXITSTATUS(spawnval);
+        }
+    }
+#endif
 
     if (spawnval == -1)
         (void) posix_error();
@@ -4133,7 +4178,11 @@ posix_fork(PyObject *self, PyObject *noargs)
     pid_t pid;
     int result = 0;
     _PyImport_AcquireLock();
+#ifdef __QNXNTO__
+    pid = _fork(_FORK_ASPACE, 0);
+#else
     pid = fork();
+#endif
     if (pid == 0) {
         /* child: this clobbers and resets the import lock. */
         PyOS_AfterFork();
@@ -7934,7 +7983,7 @@ static PyMethodDef posix_methods[] = {
 #ifdef HAVE_SPAWNV
     {"spawnv",          posix_spawnv, METH_VARARGS, posix_spawnv__doc__},
     {"spawnve",         posix_spawnve, METH_VARARGS, posix_spawnve__doc__},
-#if defined(PYOS_OS2)
+#if defined(PYOS_OS2) || defined(__QNX__)
     {"spawnvp",         posix_spawnvp, METH_VARARGS, posix_spawnvp__doc__},
     {"spawnvpe",        posix_spawnvpe, METH_VARARGS, posix_spawnvpe__doc__},
 #endif /* PYOS_OS2 */
@@ -8449,7 +8498,12 @@ all_ins(PyObject *d)
 #endif /* ST_NOSUID */
 
 #ifdef HAVE_SPAWNV
-#if defined(PYOS_OS2) && defined(PYCC_GCC)
+#if defined(__QNXNTO__)
+    if (ins(d, "P_WAIT", (long)P_WAIT)) return -1;
+    if (ins(d, "P_NOWAIT", (long)P_NOWAIT)) return -1;
+    if (ins(d, "P_OVERLAY", (long)P_OVERLAY)) return -1;
+    if (ins(d, "P_NOWAITO", (long)P_NOWAITO)) return -1;
+#elif defined(PYOS_OS2) && defined(PYCC_GCC)
     if (ins(d, "P_WAIT", (long)P_WAIT)) return -1;
     if (ins(d, "P_NOWAIT", (long)P_NOWAIT)) return -1;
     if (ins(d, "P_OVERLAY", (long)P_OVERLAY)) return -1;

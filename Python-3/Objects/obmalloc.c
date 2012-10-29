@@ -1,6 +1,9 @@
 #include "Python.h"
 
 #ifdef WITH_PYMALLOC
+#ifdef __QNXNTO__
+#include <sys/mman.h>
+#endif
 
 #ifdef WITH_VALGRIND
 #include <valgrind/valgrind.h>
@@ -577,7 +580,14 @@ new_arena(void)
     arenaobj = unused_arena_objects;
     unused_arena_objects = arenaobj->nextarena;
     assert(arenaobj->address == 0);
+#ifndef __QNXNTO__
     arenaobj->address = (uptr)malloc(ARENA_SIZE);
+#else 
+    arenaobj->address = (uptr)mmap(0, ARENA_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANON|MAP_NOINIT, NOFD, 0);
+if (arenaobj->address == MAP_FAILED) {
+        return NULL;
+    }
+#endif
     if (arenaobj->address == 0) {
         /* The allocation failed: return NULL after putting the
          * arenaobj back.
@@ -1054,7 +1064,11 @@ PyObject_Free(void *p)
                 unused_arena_objects = ao;
 
                 /* Free the entire arena. */
+#ifndef __QNXNTO__
                 free((void *)ao->address);
+#else
+		munmap((void *)ao->address, ARENA_SIZE);
+#endif
                 ao->address = 0;                        /* mark unassociated */
                 --narenas_currently_allocated;
 

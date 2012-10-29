@@ -328,7 +328,7 @@ static void destroy_gil(void)
 static void recreate_gil(void)
 {
     _Py_ANNOTATE_RWLOCK_DESTROY(&gil_locked);
-    /* XXX should we destroy the old OS resources here? */
+    destroy_gil();
     create_gil();
 }
 

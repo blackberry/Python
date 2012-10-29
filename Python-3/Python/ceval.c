@@ -1,3 +1,15 @@
+#ifdef __QNXNTO__
+
+#include <sys/trace.h>
+#include <sys/syspage.h>
+
+extern int enable_kernel_tracing;
+static is_kernel_tracing_active(void)
+{
+	return enable_kernel_tracing && (SYSPAGE_ENTRY(system_private)->private_flags & SYSTEM_PRIVATE_FLAG_TRACE_ACTIVE);
+}
+
+#endif
 
 /* Execute compiled code */
 
@@ -1208,6 +1220,17 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
     }
 
     co = f->f_code;
+
+#ifdef __QNXNTO__
+	if (is_kernel_tracing_active()) {
+		if(f->f_back)
+			trace_func_enter( PyBytes_AS_STRING(co->co_code), 
+					PyBytes_AS_STRING(f->f_back->f_code->co_code) + f->f_back->f_lasti);
+		else
+			trace_func_enter( PyBytes_AS_STRING(co->co_code), 0);
+	}
+#endif
+
     names = co->co_names;
     consts = co->co_consts;
     fastlocals = f->f_localsplus;
@@ -3053,6 +3076,15 @@ fast_yield:
         else
             SWAP_EXC_STATE()
     }
+
+#ifdef __QNXNTO__
+	if (is_kernel_tracing_active()) {
+		if(f->f_back)
+			trace_func_exit( PyBytes_AS_STRING(co->co_code), PyBytes_AS_STRING(f->f_back->f_code->co_code) + f->f_back->f_lasti);
+		else
+			trace_func_exit( PyBytes_AS_STRING(co->co_code), 0);
+	}
+#endif
 
     if (tstate->use_tracing) {
         if (tstate->c_tracefunc) {

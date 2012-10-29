@@ -33,6 +33,10 @@
 #include <ffi_common.h>
 
 #ifndef FFI_MMAP_EXEC_WRIT
+# ifdef __QNX__
+/* QNX malloc() does not return executable memory. */
+#  define FFI_MMAP_EXEC_WRIT 1
+# endif
 # if __gnu_linux__
 /* This macro indicates it may be forbidden to map anonymous memory
    with both write and execute permission.  Code compiled when this

@@ -1,0 +1,41 @@
+#!/bin/sh
+if [ -e nto-config.site ]; then
+    export CONFIG_SITE=nto-config.site
+fi
+
+if [ -z "${QNX_TARGET}" ]; then
+	echo "Environment variable QNX_TARGET not set."
+	exit 1
+fi
+
+TARGET="i486-pc-nto-qnx8.0.0"
+DEPLOY="$PWD/nto-x86"
+
+AR="${TARGET}-ar" \
+RANLIB="${TARGET}-ranlib" \
+CC="${TARGET}-gcc" \
+CXX="${TARGET}-g++" \
+LINKCC="qcc -Vgcc_ntox86" \
+LDFLAGS="-Wl,-zrelro" \
+LINKFORSHARED="-Wl,-E -N 2048K -Wl,-zrelro" \
+CFLAGS="-D_QNX_SOURCE -DFD_SETSIZE=1024 -fstack-protector-all" \
+CXXFLAGS="-D_QNX_SOURCE -DFD_SETSIZE=1024 -fstack-protector-all" \
+MACHDEP="qnx6" \
+./configure --host=${TARGET} --prefix=/usr \
+            --enable-ipv6 --enable-shared --with-libs=-liconv
+if [ $? != 0 ]; then 
+    exit 1
+fi
+
+export CROSS_COMPILE_TARGET="yes"
+export CROSS_COMPILE_LIBDIRS="${QNX_TARGET}/x86/usr/lib"
+export CROSS_COMPILE_INCDIRS="${QNX_TARGET}/usr/include"
+make HOSTPYTHON="./hostpython" HOSTPGEN="./hostpgen" install DESTDIR=${DEPLOY}
+if [ $? != 0 ]; then 
+    exit 1
+fi
+
+# Compile the python libs, remove stuff we don't need
+./cull.sh ${DEPLOY}/usr
+
+exit 0

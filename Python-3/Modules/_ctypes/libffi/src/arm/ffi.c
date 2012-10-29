@@ -29,6 +29,11 @@
 
 #include <stdlib.h>
 
+#ifdef __QNX__
+#include <sys/mman.h>
+#define __clear_cache(__beg, __end) msync(__beg, (__end) - (__beg), MS_INVALIDATE_ICACHE)
+#endif
+
 /* ffi_prep_args is called by the assembly routine once stack space
    has been allocated for the function's arguments */
 

@@ -51,12 +51,17 @@ const struct filedescr _PyImport_DynLoadFiletab[] = {
     {"module.exe", "rb", C_EXTENSION},
     {"MODULE.EXE", "rb", C_EXTENSION},
 #else  /* !__VMS */
+#ifdef __QNXNTO__
+    {".so", "rb", C_EXTENSION},
+#else
     {"." SOABI ".so", "rb", C_EXTENSION},
     {"module." SOABI ".so", "rb", C_EXTENSION},
     {".abi" PYTHON_ABI_STRING ".so", "rb", C_EXTENSION},
     {"module.abi" PYTHON_ABI_STRING ".so", "rb", C_EXTENSION},
     {".so", "rb", C_EXTENSION},
     {"module.so", "rb", C_EXTENSION},
+#endif
+
 #endif  /* __VMS */
 #endif  /* defined(PYOS_OS2) && defined(PYCC_GCC) */
 #endif  /* __CYGWIN__ */

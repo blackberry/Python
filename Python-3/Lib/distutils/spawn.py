@@ -28,7 +28,9 @@ def spawn(cmd, search_path=1, verbose=0, dry_run=0):
     Raise DistutilsExecError if running the program fails in any way; just
     return on success.
     """
-    if os.name == 'posix':
+    if sys.platform == 'qnx6':
+        _spawn_qnx(cmd, search_path, dry_run=dry_run)
+    elif os.name == 'posix':
         _spawn_posix(cmd, search_path, dry_run=dry_run)
     elif os.name == 'nt':
         _spawn_nt(cmd, search_path, dry_run=dry_run)
@@ -93,6 +95,23 @@ def _spawn_os2(cmd, search_path=1, verbose=0, dry_run=0):
             log.debug("command '%s' failed with exit status %d" % (cmd[0], rc))
             raise DistutilsExecError(
                   "command '%s' failed with exit status %d" % (cmd[0], rc))
+
+def _spawn_qnx(cmd, search_path=1, verbose=0, dry_run=0):
+    log.info(' '.join(cmd))
+    if dry_run:
+        return
+    try:
+        if search_path:
+            rc = os.spawnvp(os.P_WAIT, cmd[0], cmd)
+        else:
+            rc = os.spawnv(os.P_WAIT, cmd[0], cmd)
+    except OSError as exc:
+        raise DistutilsExecError(
+                  "command '%s' failed: %s" % (cmd[0], exc.args[-1]))
+    if rc != 0:
+        msg = "command '%s' failed with exit status %d" % (cmd[0], rc)
+        log.debug(msg)
+        raise DistutilsExecError(msg)
 
 if sys.platform == 'darwin':
     from distutils import sysconfig

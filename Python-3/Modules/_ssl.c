@@ -95,6 +95,9 @@ static PySocketModule_APIObject PySocketModule;
 /* SSL error object */
 static PyObject *PySSLErrorObject;
 
+/* SSL application-specific data */
+static int ssl_ex_pysslsocket_index;
+
 #ifdef WITH_THREAD
 
 /* serves as a flag to see whether we've initialized the SSL thread support. */
@@ -134,6 +137,7 @@ typedef struct {
     PyObject *Socket; /* weakref to socket on which we're layered */
     SSL *ssl;
     X509 *peer_cert;
+    STACK_OF(X509) *peer_cert_chain;
     int shutdown_seen_zero;
 } PySSLSocket;
 
@@ -145,6 +149,7 @@ static PyObject *PySSL_SSLread(PySSLSocket *self, PyObject *args);
 static int check_socket_and_wait_for_timeout(PySocketSockObject *s,
                                              int writing);
 static PyObject *PySSL_peercert(PySSLSocket *self, PyObject *args);
+static PyObject *PySSL_peercertchain(PySSLSocket *self, PyObject *args);
 static PyObject *PySSL_cipher(PySSLSocket *self);
 
 #define PySSLContext_Check(v)   (Py_TYPE(v) == &PySSLContext_Type)
@@ -281,6 +286,39 @@ _setSSLError (char *errstr, int errcode, char *filename, int lineno) {
     return NULL;
 }
 
+/* Useful X509 utilities */
+static X509 *_X509_incref(X509 *x509) {
+    /* This balances out the decref in X509_free */
+    CRYPTO_add(&x509->references, 1, CRYPTO_LOCK_X509);
+    return x509;
+}
+
+static STACK_OF(X509) *_sk_X509_deepcopy(STACK_OF(X509) *sk) {
+    /* Deepcopy a stack of X509 objects */
+    int i;
+    STACK_OF(X509) *newsk;
+
+    if(!sk)
+        return NULL;
+    newsk = sk_X509_dup(sk);
+    if(!newsk)
+        return NULL;
+    for(i=0; i<sk_X509_num(newsk); i++) {
+        _X509_incref(sk_X509_value(newsk, i));
+    }
+    return newsk;
+}
+
+static void PySSL_free_certs(PySSLSocket *self) {
+    if (self->peer_cert)
+        X509_free (self->peer_cert);
+    self->peer_cert = NULL;
+
+    if (self->peer_cert_chain)
+        sk_X509_pop_free (self->peer_cert_chain, X509_free);
+    self->peer_cert_chain = NULL;
+}
+
 static PySSLSocket *
 newPySSLSocket(SSL_CTX *ctx, PySocketSockObject *sock,
                enum py_ssl_server_or_client socket_type,
@@ -293,6 +331,7 @@ newPySSLSocket(SSL_CTX *ctx, PySocketSockObject *sock,
         return NULL;
 
     self->peer_cert = NULL;
+    self->peer_cert_chain = NULL;
     self->ssl = NULL;
     self->Socket = NULL;
 
@@ -303,6 +342,7 @@ newPySSLSocket(SSL_CTX *ctx, PySocketSockObject *sock,
     PySSL_BEGIN_ALLOW_THREADS
     self->ssl = SSL_new(ctx);
     PySSL_END_ALLOW_THREADS
+    SSL_set_ex_data(self->ssl, ssl_ex_pysslsocket_index, self);
     SSL_set_fd(self->ssl, sock->sock_fd);
 #ifdef SSL_MODE_AUTO_RETRY
     SSL_set_mode(self->ssl, SSL_MODE_AUTO_RETRY);
@@ -391,10 +431,10 @@ static PyObject *PySSL_SSLdo_handshake(PySSLSocket *self)
     if (ret < 1)
         return PySSL_SetError(self, ret, __FILE__, __LINE__);
 
-    if (self->peer_cert)
-        X509_free (self->peer_cert);
+    PySSL_free_certs(self);
     PySSL_BEGIN_ALLOW_THREADS
     self->peer_cert = SSL_get_peer_certificate(self->ssl);
+    self->peer_cert_chain = _sk_X509_deepcopy(SSL_get_peer_cert_chain(self->ssl));
     PySSL_END_ALLOW_THREADS
 
     Py_INCREF(Py_None);
@@ -679,6 +719,8 @@ _get_peer_alt_names (X509 *certificate) {
             }
             Py_DECREF(t);
         }
+
+        sk_GENERAL_NAME_pop_free(names, GENERAL_NAME_free);
     }
     BIO_free(biobuf);
     if (peer_alt_names != Py_None) {
@@ -870,11 +912,27 @@ PySSL_test_decode_certificate (PyObject *mod, PyObject *args) {
 }
 
 
+static PyObject *_encode_certificate(PySSLSocket *self, X509 *certificate) {
+    /* return cert in DER-encoded format */
+    PyObject *retval = NULL;
+    unsigned char *bytes_buf = NULL;
+    int len;
+
+    len = i2d_X509(certificate, &bytes_buf);
+    if (len < 0) {
+        PySSL_SetError(self, len, __FILE__, __LINE__);
+        return NULL;
+    }
+    /* this is actually an immutable bytes sequence */
+    retval = PyBytes_FromStringAndSize
+      ((const char *) bytes_buf, len);
+    OPENSSL_free(bytes_buf);
+    return retval;
+}
+
 static PyObject *
 PySSL_peercert(PySSLSocket *self, PyObject *args)
 {
-    PyObject *retval = NULL;
-    int len;
     int verification;
     PyObject *binary_mode = Py_None;
 
@@ -885,22 +943,7 @@ PySSL_peercert(PySSLSocket *self, PyObject *args)
         Py_RETURN_NONE;
 
     if (PyObject_IsTrue(binary_mode)) {
-        /* return cert in DER-encoded format */
-
-        unsigned char *bytes_buf = NULL;
-
-        bytes_buf = NULL;
-        len = i2d_X509(self->peer_cert, &bytes_buf);
-        if (len < 0) {
-            PySSL_SetError(self, len, __FILE__, __LINE__);
-            return NULL;
-        }
-        /* this is actually an immutable bytes sequence */
-        retval = PyBytes_FromStringAndSize
-          ((const char *) bytes_buf, len);
-        OPENSSL_free(bytes_buf);
-        return retval;
-
+        return _encode_certificate(self, self->peer_cert);
     } else {
         verification = SSL_CTX_get_verify_mode(SSL_get_SSL_CTX(self->ssl));
         if ((verification & SSL_VERIFY_PEER) == 0)
@@ -921,6 +964,57 @@ about the peer certificate.\n\
 If the optional argument is True, returns a DER-encoded copy of the\n\
 peer certificate, or None if no certificate was provided.  This will\n\
 return the certificate even if it wasn't validated.");
+
+
+static PyObject *
+PySSL_peercertchain(PySSLSocket *self, PyObject *args)
+{
+    PyObject *retval = NULL;
+    PyObject *obj;
+    int len, i;
+    PyObject *binary_mode = Py_None;
+    int binary_flag;
+
+    if (!PyArg_ParseTuple(args, "|O:peer_cert_chain", &binary_mode))
+        return NULL;
+
+    if (!self->peer_cert_chain)
+        Py_RETURN_NONE;
+
+    len = sk_X509_num(self->peer_cert_chain);
+    retval = PyList_New(len);
+    if (retval == NULL)
+        return NULL;
+
+    binary_flag = PyObject_IsTrue(binary_mode);
+
+    for(i=0; i<len; i++) {
+        if(binary_flag)
+            obj = _encode_certificate(self, sk_X509_value(self->peer_cert_chain, i));
+        else
+            obj = _decode_certificate(sk_X509_value(self->peer_cert_chain, i));
+
+        if(obj == NULL) {
+            Py_XDECREF(retval);
+            return NULL;
+        }
+
+        PyList_SET_ITEM(retval, i, obj);
+    }
+
+    return retval;
+}
+
+PyDoc_STRVAR(PySSL_peercertchain_doc,
+"peer_cert_chain([der=False]) -> list of certificates\n\
+\n\
+Returns the certificate chain for the peer.  If no chain was provided,\n\
+returns None.\n\
+\n\
+If the optional argument is provided and True, this returns a list of\n\
+certificates in DER-encoded form. Otherwise, it returns a list of dicts\n\
+containing information about the certificates.");
+
 
 static PyObject *PySSL_cipher (PySSLSocket *self) {
 
@@ -972,8 +1066,7 @@ static PyObject *PySSL_cipher (PySSLSocket *self) {
 
 static void PySSL_dealloc(PySSLSocket *self)
 {
-    if (self->peer_cert)        /* Possible not to have one? */
-        X509_free (self->peer_cert);
+    PySSL_free_certs(self);
     if (self->ssl)
         SSL_free(self->ssl);
     Py_XDECREF(self->Socket);
@@ -1391,6 +1484,8 @@ static PyMethodDef PySSLMethods[] = {
      PySSL_SSLpending_doc},
     {"peer_certificate", (PyCFunction)PySSL_peercert, METH_VARARGS,
      PySSL_peercert_doc},
+    {"peer_cert_chain", (PyCFunction)PySSL_peercertchain, METH_VARARGS,
+     PySSL_peercertchain_doc},
     {"cipher", (PyCFunction)PySSL_cipher, METH_NOARGS},
     {"shutdown", (PyCFunction)PySSL_SSLshutdown, METH_NOARGS,
      PySSL_SSLshutdown_doc},
@@ -1536,6 +1631,17 @@ get_verify_mode(PySSLContext *self, void *c)
     return NULL;
 }
 
+static int ssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
+    /* Store certificate in SSL object even if verification fails */
+    SSL *ssl = X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+    PySSLSocket *self = (PySSLSocket *)SSL_get_ex_data(ssl, ssl_ex_pysslsocket_index);
+    PySSL_free_certs(self);
+    self->peer_cert = _X509_incref(X509_STORE_CTX_get_current_cert(ctx));
+    self->peer_cert_chain = X509_STORE_CTX_get1_chain(ctx);
+
+    return preverify_ok;
+}
+
 static int
 set_verify_mode(PySSLContext *self, PyObject *arg, void *c)
 {
@@ -1553,7 +1659,7 @@ set_verify_mode(PySSLContext *self, PyObject *arg, void *c)
                         "invalid value for verify_mode");
         return -1;
     }
-    SSL_CTX_set_verify(self->ctx, mode, NULL);
+    SSL_CTX_set_verify(self->ctx, mode, ssl_verify_callback);
     return 0;
 }
 
@@ -2090,6 +2196,7 @@ PyInit__ssl(void)
 #endif
     OpenSSL_add_all_algorithms();
 
+    ssl_ex_pysslsocket_index = SSL_get_ex_new_index(0, "PySSLSocket pointer", NULL, NULL, NULL);
     /* Add symbols to module dict */
     PySSLErrorObject = PyErr_NewException("ssl.SSLError",
                                           PySocketModule.error,
@@ -2148,6 +2255,9 @@ PyInit__ssl(void)
     PyModule_AddIntConstant(m, "OP_NO_SSLv2", SSL_OP_NO_SSLv2);
     PyModule_AddIntConstant(m, "OP_NO_SSLv3", SSL_OP_NO_SSLv3);
     PyModule_AddIntConstant(m, "OP_NO_TLSv1", SSL_OP_NO_TLSv1);
+#ifdef __QNXNTO__
+PyModule_AddIntConstant(m, "OP_NO_TLSv1_1", SSL_OP_NO_TLSv1_1);
+#endif
 
 #ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
     r = Py_True;

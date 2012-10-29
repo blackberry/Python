@@ -825,6 +825,8 @@ PyInit_signal(void)
     PyDict_SetItemString(d, "ITIMER_REAL", x);
     Py_DECREF(x);
 #endif
+/* QNX has ITIMER_VIRTUAL and ITIMER_PROF but doesn't actually support them. */
+#ifndef __QNXNTO__
 #ifdef ITIMER_VIRTUAL
     x = PyLong_FromLong(ITIMER_VIRTUAL);
     PyDict_SetItemString(d, "ITIMER_VIRTUAL", x);
@@ -835,6 +837,7 @@ PyInit_signal(void)
     PyDict_SetItemString(d, "ITIMER_PROF", x);
     Py_DECREF(x);
 #endif
+#endif /* __QNXNTO__ */
 
 #if defined (HAVE_SETITIMER) || defined (HAVE_GETITIMER)
     ItimerError = PyErr_NewException("signal.ItimerError",

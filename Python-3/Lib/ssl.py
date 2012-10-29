@@ -62,7 +62,7 @@ import _ssl             # if we can't import it, let the error propagate
 from _ssl import OPENSSL_VERSION_NUMBER, OPENSSL_VERSION_INFO, OPENSSL_VERSION
 from _ssl import _SSLContext, SSLError
 from _ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
-from _ssl import OP_ALL, OP_NO_SSLv2, OP_NO_SSLv3, OP_NO_TLSv1
+from _ssl import OP_ALL, OP_NO_SSLv2, OP_NO_SSLv3, OP_NO_TLSv1, OP_NO_TLSv1_1
 from _ssl import RAND_status, RAND_egd, RAND_add
 from _ssl import (
     SSL_ERROR_ZERO_RETURN,
@@ -310,6 +310,13 @@ class SSLSocket(socket):
 
         self._checkClosed()
         return self._sslobj.peer_certificate(binary_form)
+
+    def getpeercertchain(self, binary_form=False):
+        """Returns the certificate chain provided by the other end
+        of the SSL channel."""
+
+        self._checkClosed()
+        return self._sslobj.peer_cert_chain(binary_form)
 
     def cipher(self):
         self._checkClosed()

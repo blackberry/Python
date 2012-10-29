@@ -464,6 +464,10 @@ DEFAULT_MMAP_THRESHOLD       default: 256K
 #define _GNU_SOURCE 1
 #endif  /* WIN32 */
 
+#ifdef __QNX__
+#define NO_MALLINFO 1
+#endif /* __QNX__ */
+
 #if defined(DARWIN) || defined(_DARWIN)
 /* Mac OSX docs advise not to use sbrk; it seems better to use mmap */
 #ifndef HAVE_MORECORE

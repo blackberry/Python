@@ -756,7 +756,7 @@ if test $enable_shared = "yes"; then
 	      PY3LIBRARY=libpython3.so
 	  fi
           ;;
-    Linux*|GNU*|NetBSD*|FreeBSD*|DragonFly*|OpenBSD*)
+    Linux*|GNU*|NetBSD*|FreeBSD*|DragonFly*|OpenBSD*|QNX*)
 	  LDLIBRARY='libpython$(LDVERSION).so'
 	  BLDLIBRARY='-L. -lpython$(LDVERSION)'
 	  RUNSHARED=LD_LIBRARY_PATH=`pwd`:${LD_LIBRARY_PATH}
@@ -1836,7 +1836,7 @@ then
 		 then CCSHARED="-fPIC";
 		 else CCSHARED="+z";
 		 fi;;
-	Linux*|GNU*) CCSHARED="-fPIC";;
+	Linux*|GNU*|QNX*) CCSHARED="-fPIC";;
 	BSD/OS*/4*) CCSHARED="-fpic";;
 	FreeBSD*|NetBSD*|OpenBSD*|DragonFly*) CCSHARED="-fPIC";;
 	OpenUNIX*|UnixWare*)

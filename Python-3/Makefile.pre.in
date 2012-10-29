@@ -191,6 +191,7 @@ LIBOBJS=	@LIBOBJS@
 
 PYTHON=		python$(EXE)
 BUILDPYTHON=	python$(BUILDEXE)
+HOSTPYTHON=	./$(BUILDPYTHON)
 
 # The task to run while instrument when building the profile-opt target
 PROFILE_TASK=	$(srcdir)/Tools/pybench/pybench.py -n 2 --with-gc --with-syscheck
@@ -233,6 +234,7 @@ LIBFFI_INCLUDEDIR=	@LIBFFI_INCLUDEDIR@
 ##########################################################################
 # Parser
 PGEN=		Parser/pgen$(EXE)
+HOSTPGEN=	$(PGEN)
 
 POBJS=		\
 		Parser/acceler.o \
@@ -435,8 +437,8 @@ platform: $(BUILDPYTHON)
 # Build the shared modules
 sharedmods: $(BUILDPYTHON)
 	@case $$MAKEFLAGS in \
-	*s*) $(RUNSHARED) CC='$(CC)' LDSHARED='$(BLDSHARED)' OPT='$(OPT)' ./$(BUILDPYTHON) -E $(srcdir)/setup.py -q build;; \
-	*) $(RUNSHARED) CC='$(CC)' LDSHARED='$(BLDSHARED)' OPT='$(OPT)' ./$(BUILDPYTHON) -E $(srcdir)/setup.py build;; \
+	*s*) $(RUNSHARED) CC='$(CC)' LDSHARED='$(BLDSHARED)' OPT='$(OPT)' $(HOSTPYTHON) -E $(srcdir)/setup.py -q build;; \
+	*) $(RUNSHARED) CC='$(CC)' LDSHARED='$(BLDSHARED)' OPT='$(OPT)' $(HOSTPYTHON) -E $(srcdir)/setup.py build;; \
 	esac
 
 # Build static library
@@ -587,7 +589,7 @@ $(IO_OBJS): $(IO_H)
 $(GRAMMAR_H) $(GRAMMAR_C): Parser/pgen.stamp
 Parser/pgen.stamp: $(PGEN) $(GRAMMAR_INPUT)
 		-@$(INSTALL) -d Include
-		$(PGEN) $(GRAMMAR_INPUT) $(GRAMMAR_H) $(GRAMMAR_C)
+		$(HOSTPGEN) $(GRAMMAR_INPUT) $(GRAMMAR_H) $(GRAMMAR_C)
 		-touch Parser/pgen.stamp
 
 $(PGEN):	$(PGENOBJS)
@@ -990,25 +992,25 @@ libinstall:	build_all $(srcdir)/Lib/$(PLATDIR) $(srcdir)/Modules/xxmodule.c
 			$(DESTDIR)$(LIBDEST)/distutils/tests ; \
 	fi
 	-PYTHONPATH=$(DESTDIR)$(LIBDEST)  $(RUNSHARED) \
-		./$(BUILDPYTHON) -Wi $(DESTDIR)$(LIBDEST)/compileall.py \
+		$(HOSTPYTHON) -Wi $(DESTDIR)$(LIBDEST)/compileall.py \
 		-d $(LIBDEST) -f \
 		-x 'bad_coding|badsyntax|site-packages|lib2to3/tests/data' \
 		$(DESTDIR)$(LIBDEST)
 	-PYTHONPATH=$(DESTDIR)$(LIBDEST) $(RUNSHARED) \
-		./$(BUILDPYTHON) -Wi -O $(DESTDIR)$(LIBDEST)/compileall.py \
+		$(HOSTPYTHON) -Wi -O $(DESTDIR)$(LIBDEST)/compileall.py \
 		-d $(LIBDEST) -f \
 		-x 'bad_coding|badsyntax|site-packages|lib2to3/tests/data' \
 		$(DESTDIR)$(LIBDEST)
 	-PYTHONPATH=$(DESTDIR)$(LIBDEST)  $(RUNSHARED) \
-		./$(BUILDPYTHON) -Wi $(DESTDIR)$(LIBDEST)/compileall.py \
+		$(HOSTPYTHON) -Wi $(DESTDIR)$(LIBDEST)/compileall.py \
 		-d $(LIBDEST)/site-packages -f \
 		-x badsyntax $(DESTDIR)$(LIBDEST)/site-packages
 	-PYTHONPATH=$(DESTDIR)$(LIBDEST) $(RUNSHARED) \
-		./$(BUILDPYTHON) -Wi -O $(DESTDIR)$(LIBDEST)/compileall.py \
+		$(HOSTPYTHON) -Wi -O $(DESTDIR)$(LIBDEST)/compileall.py \
 		-d $(LIBDEST)/site-packages -f \
 		-x badsyntax $(DESTDIR)$(LIBDEST)/site-packages
 	-PYTHONPATH=$(DESTDIR)$(LIBDEST) $(RUNSHARED) \
-		./$(BUILDPYTHON) -Wi -c "import lib2to3.pygram, lib2to3.patcomp;lib2to3.patcomp.PatternCompiler()"
+		$(HOSTPYTHON) -Wi -c "import lib2to3.pygram, lib2to3.patcomp;lib2to3.patcomp.PatternCompiler()"
 
 # Create the PLATDIR source directory, if one wasn't distributed..
 $(srcdir)/Lib/$(PLATDIR):
@@ -1102,7 +1104,7 @@ libainstall:	all python-config
 # Install the dynamically loadable modules
 # This goes into $(exec_prefix)
 sharedinstall: sharedmods
-	$(RUNSHARED) ./$(BUILDPYTHON) -E $(srcdir)/setup.py install \
+	$(RUNSHARED) $(HOSTPYTHON) -E $(srcdir)/setup.py install \
 	   	--prefix=$(prefix) \
 		--install-scripts=$(BINDIR) \
 		--install-platlib=$(DESTSHARED) \
@@ -1140,7 +1142,7 @@ frameworkinstallstructure:	$(LDLIBRARY)
 		fi; \
 	done
 	$(LN) -fsn include/python$(LDVERSION) $(DESTDIR)$(prefix)/Headers
-	sed 's/%VERSION%/'"`$(RUNSHARED) ./$(BUILDPYTHON) -c 'import platform; print(platform.python_version())'`"'/g' < $(RESSRCDIR)/Info.plist > $(DESTDIR)$(prefix)/Resources/Info.plist
+	sed 's/%VERSION%/'"`$(RUNSHARED) $(HOSTPYTHON) -c 'import platform; print(platform.python_version())'`"'/g' < $(RESSRCDIR)/Info.plist > $(DESTDIR)$(prefix)/Resources/Info.plist
 	$(LN) -fsn $(VERSION) $(DESTDIR)$(PYTHONFRAMEWORKINSTALLDIR)/Versions/Current
 	$(LN) -fsn Versions/Current/$(PYTHONFRAMEWORK) $(DESTDIR)$(PYTHONFRAMEWORKINSTALLDIR)/$(PYTHONFRAMEWORK)
 	$(LN) -fsn Versions/Current/Headers $(DESTDIR)$(PYTHONFRAMEWORKINSTALLDIR)/Headers
@@ -1174,7 +1176,7 @@ frameworkinstallextras:
 # This installs a few of the useful scripts in Tools/scripts
 scriptsinstall:
 	SRCDIR=$(srcdir) $(RUNSHARED) \
-	./$(BUILDPYTHON) $(srcdir)/Tools/scripts/setup.py install \
+	$(HOSTPYTHON) $(srcdir)/Tools/scripts/setup.py install \
 	--prefix=$(prefix) \
 	--install-scripts=$(BINDIR) \
 	--root=$(DESTDIR)/
@@ -1196,7 +1198,7 @@ config.status:	$(srcdir)/configure
 
 # Run reindent on the library
 reindent:
-	./$(BUILDPYTHON) $(srcdir)/Tools/scripts/reindent.py -r $(srcdir)/Lib
+	$(HOSTPYTHON) $(srcdir)/Tools/scripts/reindent.py -r $(srcdir)/Lib
 
 # Rerun configure with the same options as it was run last time,
 # provided the config.status script exists
@@ -1317,7 +1319,7 @@ funny:
 
 # Perform some verification checks on any modified files.
 patchcheck:
-	$(RUNSHARED) ./$(BUILDPYTHON) $(srcdir)/Tools/scripts/patchcheck.py
+	$(RUNSHARED) $(HOSTPYTHON) $(srcdir)/Tools/scripts/patchcheck.py
 
 # Dependencies
 

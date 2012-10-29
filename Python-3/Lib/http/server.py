@@ -906,7 +906,7 @@ class CGIHTTPRequestHandler(SimpleHTTPRequestHandler):
     """
 
     # Determine platform specifics
-    have_fork = hasattr(os, 'fork')
+    have_fork = hasattr(os, 'fork') and sys.platform != 'qnx6'
 
     # Make rfile unbuffered -- we need to read one line and then pass
     # the rest to a subprocess, so we can't use buffered input.

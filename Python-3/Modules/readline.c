@@ -45,20 +45,22 @@ extern char **completion_matches(char *, CPFunction *);
 #endif
 #endif
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__QNXNTO__)
 /*
  * It is possible to link the readline module to the readline
  * emulation library of editline/libedit.
  *
  * On OSX this emulation library is not 100% API compatible
  * with the "real" readline and cannot be detected at compile-time,
- * hence we use a runtime check to detect if we're using libedit
+ * hence we use a runtime check to detect if we're using libedit.
  *
- * Currently there is one know API incompatibility:
+ * Currently there is one known API incompatibility:
  * - 'get_history' has a 1-based index with GNU readline, and a 0-based
  *   index with libedit's emulation.
  * - Note that replace_history and remove_history use a 0-based index
- *   with both implementation.
+ *   with both implementations.
+ * 
+ * The QNX editline library does not have these compatibility problems.
  */
 static int using_libedit_emulation = 0;
 static const char libedit_version_tag[] = "EditLine wrapper";
@@ -564,7 +566,7 @@ get_history_item(PyObject *self, PyObject *args)
 
     if (!PyArg_ParseTuple(args, "i:index", &idx))
         return NULL;
-#ifdef  __APPLE__
+#ifdef __APPLE__
     if (using_libedit_emulation) {
         /* Libedit emulation uses 0-based indexes,
          * the real one uses 1-based indexes,
@@ -889,7 +891,7 @@ setup_readline(void)
         Py_FatalError("not enough memory to save locale");
 #endif
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__QNXNTO__)
     /* the libedit readline emulation resets key bindings etc 
      * when calling rl_initialize.  So call it upfront
      */
@@ -928,7 +930,7 @@ setup_readline(void)
      * XXX: A bug in the readline-2.2 library causes a memory leak
      * inside this function.  Nothing we can do about it.
      */
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__QNXNTO__)
     if (using_libedit_emulation)
 	rl_read_init_file(NULL);
     else
@@ -1134,7 +1136,7 @@ call_readline(FILE *sys_stdin, FILE *sys_stdout, char *prompt)
 PyDoc_STRVAR(doc_module,
 "Importing this module enables command line editing using GNU readline.");
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__QNXNTO__)
 PyDoc_STRVAR(doc_module_le,
 "Importing this module enables command line editing using libedit readline.");
 #endif /* __APPLE__ */
@@ -1157,7 +1159,7 @@ PyInit_readline(void)
 {
     PyObject *m;
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__QNXNTO__)
     if (strncmp(rl_library_version, libedit_version_tag, strlen(libedit_version_tag)) == 0) {
         using_libedit_emulation = 1;
     }
